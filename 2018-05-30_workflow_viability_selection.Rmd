@@ -1,0 +1,62 @@
+---
+title: "workflow_viability_selection"
+output:
+  html_document: 
+    toc: yes
+  pdf_document: default
+---
+# Library
+```{r}
+#install.packages("DiagrammeR")
+library(DiagrammeR)
+```
+# Overall Workflow
+```{r}
+mermaid("
+  graph TD
+  A[Master Data Sheet] --calculate--> B[Metabolic Rates CO2 production per hr per mass]
+  B --> T[Day 11]
+  B --> R[Day 15]
+  A -- calculate --> C[lifespan]
+  T --> E[Scatter plot showing relationship between life span and MR]
+  R --> E
+  C --> E
+        ")
+
+```
+
+##Detailed workflow for calculating metabolic rate
+How do we calculate metabolic rate?
+Metabolic Rate = CO2 production/ hours
+Mass Specific Metabolic Rate = CO2 production/hrs per mass
+
+What are cohorts?
+* Essentially handling replicats because we cannot sample all flies at once. For each cohort, there are two batches: (1) licor 7000 and (2) licor 6262
+* To process more samples, measurements were spread across 2 respirometers(licors).
+* Each licor has associated tape color indicated in tape column
+* When purged (allowing pupae to breathe in a syringe under standardized air without CO2), there was a start and end time for beginning and end of purge for each tape samples (licor batch). 
+
+What columns do we need from the master data sheet?
+* mass_day10: mass on day 10 (mgs)
+* purge_time_1: initial time for pupae to breathe in tube
+* resp_time_1: time of respirometry sampling
+* resp_day_11: respirometry on day 11
+
+**Problem** with purge_time_1: only start and stop times except for apple cohort 1 
+**Solution** create time sequence for each cohort from start to end
+
+
+```{r}
+mermaid("
+  graph TD
+  A[Master Data Sheet] --> B[Create time sequence for purge_time_1 in hrs minutes]
+  B--subtract from 24 and add to resp_time_1 --> C[Total hrs]
+  C --divide over resp_day11--> E[metabolic rate]
+  C --multiply by mass and divide over resp_day11--> D[Mass specific metabolic rate]
+")
+```
+
+# Session Info
+```{r}
+sessionInfo()
+```
