@@ -1,0 +1,40 @@
+---
+title: "dplyr example"
+output: html_document
+---
+###Parsing exercise to showcase dplyr
+
+How many individuals are there for each host and each cohort, and each licor(color)?
+```{r}
+data%>%
+    group_by(Host, cohort_day, tape)%>%
+    summarise(sample_size=length(Host))
+
+#How many different colors are in each host and cohort?
+data%>%
+    group_by(Host, cohort_day)%>%
+    summarise(sample_size=length(unique(tape)))
+
+#What is the range of mr above 0.2 for day 11?
+dim(data)
+data%>%
+  filter(resp_day11 > 0.2)%>%
+  #dim()
+  summarise(., min=min(resp_day11), max=max(resp_day11))
+
+(unique(data$tape))
+length(unique(data$tape))
+
+#add a new column where we create a new composite identifier for each sample: paste Host, tape color, and individual ID
+
+data$new.labels <- paste(data$Host, data$tape, data$cohort_day, sep="")
+glimpse(data$new.labels)
+
+#what if we want to indicate the sample sizes for each cohort, host, and tape and assign it to a new column in a dataset?
+testdat<- data%>%
+  group_by(Host, tape, cohort_day)%>%
+  mutate(sample.size.cohort=length(cohort_day))
+testdat
+glimpse(testdat)
+
+```

@@ -1,0 +1,247 @@
+---
+title: "viability_selection_mr_lifespan"
+output: 
+  html_document: 
+    toc: yes
+---
+
+#Libraries
+```{r}
+library(dplyr) #data parsing library
+library(data.table) #data parsing library mainly for reading and writing out
+library(ggplot2) #data visualization library
+library(lubridate) #package to deal with time variables
+library(curl)
+```
+
+# Download data and do preliminary parsing
+Data are publicly available via [github](https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-05-30_rhagoletis_masterdata_data_slice.csv)
+```{r}
+data<- fread("https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-05-30_rhagoletis_masterdata_data_slice.csv")
+
+#look at summary of data
+glimpse(data)
+```
+
+#Calculating metabolic rates
+```{r}
+glimpse(data$purge_time_1)
+hm(data$purge_time_1)
+data$day10purge <- lubridate::hour(hm(data$purge_time_1))+lubridate::minute(hm(data$purge_time_1))/60
+
+#figure out how to create a time sequence
+start<-13.26667
+end<- 14.5
+n=75
+seq(start,end, length.out = n)
+
+#Getting start and end (min and max) of purges and smaple size for each host, cohort day, and tape
+param <- data%>%
+  group_by(cohort_day, tape)%>%
+  summarise(max=max(day10purge, na.rm=TRUE), min=min(day10purge, na.rm=TRUE), n=length(cohort_day))
+
+#goal: for this section, we want a sequence of times for day 10 purge
+data2 <- data%>%
+  group_by(cohort_day, tape)%>%
+  mutate(.,day10purge.trans=seq(from = min(day10purge, na.rm=TRUE), to = max(day10purge, na.rm=TRUE), length.out = length(Host)))
+glimpse(data2)
+
+#cohort 2&3 for apple have the right sequence of purge times so they(day10purge) need to be replaced into corresponding day10purge.trans column
+#extracting number of rows we want to replace
+data2[1:500,]%>%
+  filter(cohort_day < 4)%>%
+  dim()
+data2[1:211,46]<- data2[1:211,45]
+data2[1:211,46]
+
+#calculating start and end time
+glimpse(data$resp_time_1)
+hms(data$resp_time_1)
+data2$day10resp <- lubridate::hour(hms(data$resp_time_1))+lubridate::minute(hms(data$resp_time_1))/60
+
+data2$total_time_day10 <- (24 - data2$day10purge.trans) + data2$day10resp
+
+#getting denominator for mass-specific mr
+data2$total_time_day10 * data$mass_day10
+
+data2$MR11<- data$resp_day11/(data2$total_time_day10)
+data2$msMR11<- data$resp_day11/(data2$total_time_day10 * data$mass_day10)
+
+#need to control for blank controls
+data3 <- data2%>%
+  group_by(cohort_day, tape)%>%
+  filter(Site_name=="Blank")%>%
+  summarise(mean.blank=mean(MR11,na.rm=TRUE))
+#check columns
+glimpse(data3)
+data3$mean.blank
+
+#merge data3 and data2 by cohort day and tape
+data4 <- inner_join(data2, data3, by=c("cohort_day", "tape"))
+data4
+data4$mean.blank
+
+#do some corrections
+data5 <- data4%>%
+  mutate(MR11.cor = MR11 - mean.blank, msMR11.cor = msMR11 - mean.blank)
+glimpse(data5)
+
+data5.neg <- data5%>% 
+  filter(MR11.cor<0)%>%
+  dim()
+  #select(.,c("cohort_day","tape", "uniqueID", "MR11.cor"))
+   #fwrite(data5.neg,"2018-05-31_negative_MR.csv")
+
+#ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
+```
+
+## Figures of mr between hosts
+```{r}
+ggplot(data5, aes(x=Host, y=MR11.cor))+geom_boxplot()
+ggplot(data5, aes(x=MR11.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
+```
+#Calculate eclosion days
+```{r}
+data5$neweclosions<-difftime(as.Date(data5$eclosion_date), as.Date(data5$Eclosion_reference_date),units=c("days"))+15
+```
+#Explore eclosion data
+```{r}
+ggplot(data5.treatsub, aes(x=MR11.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+a<-ggplot(data5.treatsub, aes(x=MR11.cor, fill=(Host)))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+b<-ggplot(data5.treatsub, aes(x=neweclosions, fill=(Host)))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+#4 panel
+install.packages("gridExtra")
+library(gridExtra)
+grid.arrange(nrow=2,a,b)
+
+```
+###Test differences in eclosion timing between host and experiment
+```{r}
+mod1<- aov(neweclosions~Host*treatment, data=data5.treatsub)
+summary(mod1)
+
+#narrow down to SO
+data5.SO<-data5.treatsub%>%
+  filter(treatment=="SO")
+
+mod2<-aov(neweclosions~Host, data=data5.SO)
+summary(mod2)
+
+#how balanced it is
+data5.SO%>%
+  group_by(Host)%>%
+  summarise(n=length(Host))
+```
+#Explore relationship between eclosion days and MR
+**scatter plots**
+```{r}
+
+data5.treatsub<-data5%>%
+  filter(treatment!="GC"&treatment!="")
+
+ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")+facet_grid(.~treatment)
+
+#plotting mr11 on the x axis and new eclosions on the y axis; color points by host, fit curve to data
+ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")
+
+
+#same - fit linear curve to data
+ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm")
+
+#could log transform mr to make it more linear
+ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm") + xlim(-3.2,-.5)
+```
+
+#Calculating lifespan
+```{r}
+data5$lifespan<-difftime(as.Date(data5$Adult_death_date), as.Date(data5$eclosion_date),units=c("days"))
+
+lsdata<-data5$lifespan
+```
+
+## Figures of lifespan between hosts
+```{r}
+
+ggplot(data5, aes(x=Host, y=lifespan))+geom_boxplot()
+ggplot(data5, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
+
+```
+
+#Associating MR with lifespan
+```{r}
+ggplot(data5.treatsub,aes(x= MR11.cor, y=lsdata, colour=Host))+geom_point()+stat_smooth(method="loess")
+
+```
+
+
+## Repeat above, but with day 15
+```{r}
+glimpse(data$purge_time_2)
+hm(data$purge_time_2)
+data$day15purge <- lubridate::hour(hm(data$purge_time_2))+lubridate::minute(hm(data$purge_time_2))/60
+
+#figure out how to create a time sequence
+start<-13.26667
+end<- 14.5
+n=75
+seq(start,end, length.out = n)
+
+#Getting start and end (min and max) of purges and sample size for each host, cohort day, and tape
+param <- data%>%
+  group_by(cohort_day, tape)%>%
+  summarise(max=max(day15purge, na.rm=TRUE), min=min(day10purge, na.rm=TRUE), n=length(cohort_day))
+
+#goal: for this section, we want a sequence of times for day 10 purge
+data2.15 <- data%>%
+  group_by(cohort_day, tape)%>%
+  mutate(.,day15purge.trans=seq(from = min(day15purge, na.rm=TRUE), to = max(day15purge, na.rm=TRUE), length.out = length(Host)))
+glimpse(data2.15)
+
+#calculating start and end time
+glimpse(data$resp_time_2)
+hms(data$resp_time_2)
+data2.15$day15resp <- lubridate::hour(hms(data$resp_time_2))+lubridate::minute(hms(data$resp_time_2))/60
+
+data2.15$total_time_day15 <- (24 - data2.15$day15purge.trans) + data2.15$day15resp
+
+#getting denominator for mass-specific mr
+data2.15$total_time_day15 * data$mass_day14
+
+data2.15$MR15<- data$resp_day15/(data2.15$total_time_day15)
+data2.15$msMR15<- data$resp_day15/(data2.15$total_time_day15 * data$mass_day14)
+
+#need to control for blank controls
+data3.15 <- data2.15%>%
+  group_by(cohort_day, tape)%>%
+  filter(Site_name=="Blank")%>%
+  summarise(mean.blank2=mean(MR15,na.rm=TRUE))
+#check columns
+glimpse(data3.15)
+data3.15$mean.blank2
+
+#merge data3 and data2 by cohort day and tape
+data4.15 <- inner_join(data2.15, data3.15, by=c("cohort_day", "tape"))
+data4.15
+data4.15$mean.blank2
+
+#do some corrections
+data5.15 <- data4.15%>%
+  mutate(MR15.cor = MR15 - mean.blank2, msMR15.cor = msMR15 - mean.blank2)
+glimpse(data5.15)
+
+data5.15.neg <- data5.15%>% 
+  filter(MR15.cor<0)%>%
+  dim()
+  #select(.,c("cohort_day","tape", "uniqueID", "MR11.cor"))
+   #fwrite(data5.neg,"2018-05-31_negative_MR.csv")
+
+#ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
+```
+
+#Session Info
+```{r}
+sessionInfo()
+```
