@@ -157,22 +157,31 @@ ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=neweclosions, colour=Host))+geom_
 
 #Calculating lifespan
 ```{r}
-data5$lifespan<-difftime(as.Date(data5$Adult_death_date), as.Date(data5$eclosion_date),units=c("days"))
+data5.treatsub$lifespan<-difftime(as.Date(data5.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
 
-lsdata<-data5$lifespan
+#finding negative lifespans
+lsneg <- data5.treatsub%>% 
+  filter(lifespan < 0) %>%
+  select(uniqueID,cohort_day, tape)
+
 ```
 
 ## Figures of lifespan between hosts
 ```{r}
 
-ggplot(data5, aes(x=Host, y=lifespan))+geom_boxplot()
-ggplot(data5, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
+ggplot(data5.treatsub, aes(x=Host, y=lifespan))+geom_boxplot()
+ggplot(data5.treatsub, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
 
 ```
 
 #Associating MR with lifespan
 ```{r}
-ggplot(data5.treatsub,aes(x= MR11.cor, y=lsdata, colour=Host))+geom_point()+stat_smooth(method="loess")
+
+ggplot(data5.treatsub,aes(x= MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + facet_grid(.~treatment)
+
+a<- ggplot(data5.treatsub,aes(x=MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") + facet_grid(.~treatment)
+
+ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + xlim(-3.2,-.5) + ylim(-.5, 150)
 
 ```
 
@@ -234,11 +243,74 @@ glimpse(data5.15)
 
 data5.15.neg <- data5.15%>% 
   filter(MR15.cor<0)%>%
-  dim()
+
   #select(.,c("cohort_day","tape", "uniqueID", "MR11.cor"))
    #fwrite(data5.neg,"2018-05-31_negative_MR.csv")
 
 #ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
+
+
+#figures of mr b/w hosts
+
+ggplot(data5.15, aes(x=Host, y=MR15.cor))+geom_boxplot()
+
+ggplot(data5.15, aes(x=MR15.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
+#eclosion data
+data5.15.treatsub$neweclosions<-difftime(as.Date(data5.15.treatsub$eclosion_date), as.Date(data5.15.treatsub$Eclosion_reference_date),units=c("days"))+15
+
+#scatter plots
+data5.15.treatsub<-data5.15%>%
+  filter(treatment!="GC"&treatment!="")
+
+ggplot(data5.15.treatsub, aes(x=MR15.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")+facet_grid(.~treatment)
+
+#plotting mr15 on the x axis and new eclosions on the y axis; color points by host, fit curve to data
+ggplot(data5.15.treatsub,aes(x=MR15.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")
+
+#same - fit linear curve to data
+ggplot(data5.15.treatsub,aes(x=MR15.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm")
+
+#could log transform mr to make it more linear
+ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm") + xlim(-3.2,-.5)
+
+
+#mr15 w lifespan
+data5.15.treatsub$lifespan<-difftime(as.Date(data5.15.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.15.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
+
+ggplot(data5.15.treatsub,aes(x= MR15.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + facet_grid(.~treatment)
+
+ggplot(data5.15.treatsub,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") + facet_grid(.~treatment)
+
+ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm")
+
+grid.arrange(nrow=2,a,b)
+```
+
+#negative binomial regression to determine the effect of metabolic rate on lifespan between hosts and its' treatments
+```{r}
+library(MASS)
+#determining class
+class(data5.15.treatsub$lifespan)
+data5.15.treatsub$lifespan<-as.numeric(data5.15.treatsub$lifespan)
+
+#model2<-glm.nb(lifespan~MR15.cor*Host*treatment, data=data5.15.treatsub)
+
+
+#separating out RT and SO 
+RT15 <- data5.15.treatsub%>%
+    filter(treatment=="RT")
+
+SO15 <- data5.15.treatsub%>%
+    filter(treatment=="SO")
+
+#RT summary (no stat significance)
+mod3<- glm.nb(lifespan~MR15.cor*Host, data=RT15)
+summary(mod3)
+
+#SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
+mod4<-glm.nb(lifespan~MR15.cor*Host, data=SO15)
+summary(mod4)
+
 ```
 
 #Session Info
