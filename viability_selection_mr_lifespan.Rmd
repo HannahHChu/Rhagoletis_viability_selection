@@ -249,6 +249,8 @@ data5.15.neg <- data5.15%>%
 
 #ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
 
+#Neweclosions
+data5.15$neweclosions <- difftime(as.Date(data5.15$eclosion_date), as.Date(data5.15$Eclosion_reference_date),units=c("days"))+15
 
 #figures of mr b/w hosts
 
@@ -286,7 +288,7 @@ ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=lifespan, colour=Host))+geom_p
 grid.arrange(nrow=2,a,b)
 ```
 
-#negative binomial regression to determine the effect of metabolic rate on lifespan between hosts and its' treatments
+#Negative binomial regression to determine the effect of metabolic rate on lifespan between hosts and its' treatments
 ```{r}
 library(MASS)
 #determining class
@@ -308,12 +310,218 @@ mod3<- glm.nb(lifespan~MR15.cor*Host, data=RT15)
 summary(mod3)
 
 #SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
+  #mod4 shows interaction b/w host and mr
 mod4<-glm.nb(lifespan~MR15.cor*Host, data=SO15)
 summary(mod4)
 
+#mod6 shows how mr and host individually relate to lifespan
+mod6<-glm.nb(lifespan~MR15.cor + Host, data=SO15)
+summary(mod6)
+
+#Likelihood ratio tests of Negative Binomial Models
+m1 <- update(mod4, . ~ . - prog)
+anova(mod4, m1)
+
+#Checking model assumption -- is negative binomial regression (NBR) a good model for this data?
+##Values close to 0 (estimates the dispersion parameter) strongly suggest the NBR model is more appropriate than the Poisson model
+mod5 <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15)
+pchisq(2 * (logLik(mod4) - logLik(mod5)), df = 1, lower.tail = FALSE)
+
+#output below indicates that Hawthorne is 0.432 times less likely to live than apple
+#confidence interval
+(est <- cbind(Estimate = coef(mod4), confint(mod4)))
+#incident rate ratio - lifespan ratio
+exp(est)
+
+#Filter out all the NAs in order to have same dimensions for predvalues
+filSO15<- SO15%>%
+  filter(MR15.cor!= "NA"&lifespan !="NA")
+
+#Calculate the predicted values
+filSO15$predvalues <- predict(mod6, type = "response")
+glimpse(filSO15)
+
+
+#overlay of real data(points)  with predicted values(line)
+a<-ggplot(filSO15,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filSO15, aes(x=MR15.cor, y=predvalues, colour=Host))
 ```
 
-#Session Info
+# Double Checking Eclosion for Pupal Deaths
+```{r}
+#Assign names to each column and column bind in order to simplify and find data easily 
+host <- data[,11]
+cd <- data[,10]
+wid <- data[,29]
+unid<-data[,26]
+edate <- data[,27]
+dcheck<-cbind(host, cd, wid, unid, edate)
+```
+
+#Merging pupal death data sheet lifespans
+Data available on [github](https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-06-04_pupal_deaths_data.csv)
+```{r}
+pupdeaths<- fread("https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-06-04_pupal_deaths_data.csv")
+
+#Filter out non-eclosers
+data5.na <- data5.15%>%
+  mutate(neweclosions=as.numeric(neweclosions))%>%
+  #glimpse()
+  filter(is.na(neweclosions))
+
+#Filter out individuals with adult lifespans
+data5.ls <- data5.15.treatsub%>%
+  filter(!is.na(lifespan))
+
+#Merge the two sets of data (lifespan and non-eclosers) by "Host", "cohort_day", "well_id", and "uniqueID"
+mergedat1 <- inner_join(pupdeaths, data5.na, by = c("Host", "cohort_day", "well_id", "uniqueID"))
+
+#column bind the merged data with the lifespan data to check same column dim
+cbind(names(data5.ls), names(mergedat1)[-56])
+
+#once the column dimensions are the same, merge the two sets of data
+mergedata<- merge(data5.ls, mergedat1)
+
+#Finally, row bind the data with the desired conditions
+finalmerge<- rbind(data5.ls[,c("Host", "cohort_day", "well_id", "uniqueID", "lifespan", "MR15.cor", "treatment", "mass_day14")], mergedat1[,c("Host", "cohort_day", "well_id", "uniqueID", "lifespan", "MR15.cor", "treatment", "mass_day14")])
+
+glimpse(finalmerge)
+
+```
+
+#Negative binomial regression reanalyzed with pupal death data
+```{r}
+RT15.n <- finalmerge%>%
+    filter(treatment=="RT")
+
+SO15.n <- finalmerge%>%
+    filter(treatment=="SO")
+
+#RT summary (no stat significance)
+mod3.n<- glm.nb(lifespan~MR15.cor*Host, data=RT15.n)
+summary(mod3.n)
+
+#SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
+  #mod4 shows interaction b/w host and mr
+mod4.n<-glm.nb(lifespan~MR15.cor*Host, data=SO15.n)
+summary(mod4.n)
+
+#mod6 shows how mr and host individually relate to lifespan
+mod6.n<-glm.nb(lifespan~MR15.cor + Host, data=SO15.n)
+summary(mod6)
+
+#Likelihood ratio tests of Negative Binomial Models
+m1.n <- update(mod4.n, . ~ . - prog)
+anova(mod4.n, m1.n)
+
+#Checking model assumption -- is negative binomial regression (NBR) a good model for this data?
+##Values close to 0 (estimates the dispersion parameter) strongly suggest the NBR model is more appropriate than the Poisson model
+mod5.n <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15.n)
+pchisq(2 * (logLik(mod4.n) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
+
+#output below indicates that Hawthorne is 0.432 times less likely to live than apple
+#confidence interval
+(est <- cbind(Estimate = coef(mod6.n), confint(mod6.n)))
+#incident rate ratio - lifespan ratio
+exp(est)
+
+#Filter out all the NAs in order to have same dimensions for predvalues
+filSO15.n<- SO15.n%>%
+  filter(MR15.cor!= "NA"&lifespan !="NA")
+
+#Calculate the predicted values
+filSO15.n$predvalues <- predict(mod6.n, type = "response")
+glimpse(filSO15.n)
+
+
+#overlay of real data(points)  with predicted values(line)
+b<-ggplot(filSO15.n,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filSO15.n, aes(x=MR15.cor, y=predvalues, colour=Host))
+
+#comparison of non-pupal deaths w/ pupal deaths
+grid.arrange(nrow=2,a,b)
+```
+
+# Kaplan-Meier Survival Estimate
+```{r}
+#install.packages(c("survival", "survminer"))
+#install.packages(c("ggpubr", "magrittr"))
+library(survival)
+library(survminer)
+
+#Assign censored data and create new column
+finalmerge$status[finalmerge$lifespan == 0] <- 0
+finalmerge$status[finalmerge$lifespan > 0 ] <- 1
+finalmerge
+
+#Normalize data
+#install.packages("BBmisc")
+library(BBmisc)
+n.finalmerge<-normalize(finalmerge [], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+
+#compute kaplan-Meier survival estimate-so compute the survival probability by host & treatment:
+  #fit1 computes survival probability by Host only
+  #fit2 computes survival probability by Treatment only
+  #fit3 computes survival probability by Host + Treatment
+
+fit1 <- survfit(Surv(lifespan, status) ~ Host, data = finalmerge)
+print(fit1)
+
+fit2 <- survfit(Surv(lifespan, status) ~ treatment, data = finalmerge)
+print(fit2)
+
+fit3 <- survfit(Surv(lifespan, status) ~ Host + treatment, data = finalmerge)
+print(fit3)
+
+# Summary of survival curves
+summary(fit1) 
+summary(fit2)
+summary(fit3)
+
+# Access to the sort summary table
+summary(fit1)$table
+summary(fit2)$table
+summary(fit3)$table
+
+# Visualize curves (Change color, linetype by strata, risk.table color by strata)
+h<-ggsurvplot(fit1,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          xlab = "Lifespan in days",
+           legend.title = "Conditions",
+          pval.size=4)
+
+tt<-ggsurvplot(fit2,
+          pval = TRUE, conf.int = FALSE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#DBAECB", "#2E9FDF","#E7B800"),
+          xlab = "Lifespan in days",
+          legend.title = "Conditions",
+          pval.size=4)
+
+both<-ggsurvplot(fit3,
+          pval = TRUE, conf.int = FALSE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = c("dashed","solid", "dashed", "dashed","solid"), # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#F9E996","#FFD700","#A9A9A9","#496DA1","#204A87"),
+          xlab = "Lifespan in days",
+          legend.title = "Conditions",
+          pval.size=4)
+install.packages("grid")
+grid.arrange(grobs=lapply(list(h, tt, both), grobTree), ncol=3)
+```
+
+# Session Info
 ```{r}
 sessionInfo()
 ```

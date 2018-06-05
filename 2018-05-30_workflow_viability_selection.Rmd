@@ -56,6 +56,23 @@ mermaid("
 ")
 ```
 
+## Workflow for Merging Pupal Death Data with Lifespan Data
+```{r}
+mermaid("
+  graph TD
+  A[Master Data Sheet] --filter out the non-eclosers--> B[Subset of ind. who haven't eclosed]
+  A -- adult death date - eclosion date --> E[Lifespan Data]
+  C[Pupal Deaths Data Sheet]
+  B --merge based on host, cohort_day, well_id, uniqueID --> D[Merged Data Sheets]
+  C --merge based on host, cohort_day, well_id, uniqueID --> D
+  D --merge--> F[Final Data Sheet]
+  E --merge--> F[Final Data Sheet]
+  F --analyses using R --> G[negative binomial regression]
+  F --analyses using R package survival --> H[Survival analysis]
+  F --analyses using R--> I[COX regression]
+")
+```
+
 # Session Info
 ```{r}
 sessionInfo()
