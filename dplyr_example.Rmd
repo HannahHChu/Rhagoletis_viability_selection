@@ -37,4 +37,9 @@ testdat<- data%>%
 testdat
 glimpse(testdat)
 
+#figure out how to create a time sequence
+start<-13.26667
+end<- 14.5
+n=75
+seq(start,end, length.out = n)
 ```

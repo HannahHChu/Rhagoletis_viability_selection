@@ -1,0 +1,29 @@
+#Output
+
+##Results of Two Way ANOVA
+                Df Sum Sq Mean Sq F value   Pr(>F)    
+Host             1   3685    3685   9.705  0.00193 ** 
+treatment        1  82798   82798 218.056  < 2e-16 ***
+Host:treatment   1   9903    9903  26.080 4.45e-07 ***
+Residuals      579 219851     380                     
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+606 observations deleted due to missingness
+
+##Results of One Way ANOVA
+####RT
+             Df Sum Sq Mean Sq F value Pr(>F)  
+Host          1   2143  2142.9    2.97  0.086 .
+Residuals   250 180353   721.4                 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+346 observations deleted due to missingness
+
+####SO
+             Df Sum Sq Mean Sq F value Pr(>F)    
+Host          1  10064   10064   83.83 <2e-16 ***
+Residuals   329  39499     120                   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+260 observations deleted due to missingness
+

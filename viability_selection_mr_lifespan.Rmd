@@ -1,7 +1,9 @@
 ---
 title: "viability_selection_mr_lifespan"
-output: 
-  html_document: 
+output:
+  pdf_document:
+    toc: yes
+  html_document:
     toc: yes
 ---
 
@@ -11,7 +13,13 @@ library(dplyr) #data parsing library
 library(data.table) #data parsing library mainly for reading and writing out
 library(ggplot2) #data visualization library
 library(lubridate) #package to deal with time variables
-library(curl)
+library(curl) #incorporate URLs
+library(DiagrammeR) #figure aesthetics
+library(MASS) #Functions and datasets to support
+library(BBmisc) #Miscellaneous functions
+library(survival) #survival data analysis
+library(survminer) #survival data analysis
+library(gridExtra) #figure aesthetics
 ```
 
 # Download data and do preliminary parsing
@@ -24,18 +32,18 @@ glimpse(data)
 ```
 
 #Calculating metabolic rates
+Metabolic Rate = CO2 production/ hours
+Mass Specific Metabolic Rate = CO2 production/hrs per mass
+**Problem** with purge_time_1: only start and stop times except for apple cohort 1
+**Solution** create time sequence for each cohort from start to end and merge into master data sheet
+##Day 11
+###Creating the time sequence
 ```{r}
 glimpse(data$purge_time_1)
 hm(data$purge_time_1)
 data$day10purge <- lubridate::hour(hm(data$purge_time_1))+lubridate::minute(hm(data$purge_time_1))/60
 
-#figure out how to create a time sequence
-start<-13.26667
-end<- 14.5
-n=75
-seq(start,end, length.out = n)
-
-#Getting start and end (min and max) of purges and smaple size for each host, cohort day, and tape
+#Obtaining start and end (min and max) of purges and smaple size for each host, cohort day, and tape
 param <- data%>%
   group_by(cohort_day, tape)%>%
   summarise(max=max(day10purge, na.rm=TRUE), min=min(day10purge, na.rm=TRUE), n=length(cohort_day))
@@ -47,38 +55,50 @@ data2 <- data%>%
 glimpse(data2)
 
 #cohort 2&3 for apple have the right sequence of purge times so they(day10purge) need to be replaced into corresponding day10purge.trans column
-#extracting number of rows we want to replace
+  #extract number of rows we want to replace
 data2[1:500,]%>%
   filter(cohort_day < 4)%>%
   dim()
 data2[1:211,46]<- data2[1:211,45]
 data2[1:211,46]
+```
 
-#calculating start and end time
+###Calculating start and end time for total amount of hours of CO2 production
+```{r}
 glimpse(data$resp_time_1)
 hms(data$resp_time_1)
 data2$day10resp <- lubridate::hour(hms(data$resp_time_1))+lubridate::minute(hms(data$resp_time_1))/60
 
+#reformatting to obtain positive values
 data2$total_time_day10 <- (24 - data2$day10purge.trans) + data2$day10resp
+```
 
+###Metabolic Rate Calculation
+```{r}
 #getting denominator for mass-specific mr
 data2$total_time_day10 * data$mass_day10
 
+#Metabolic Rate for day 11
 data2$MR11<- data$resp_day11/(data2$total_time_day10)
-data2$msMR11<- data$resp_day11/(data2$total_time_day10 * data$mass_day10)
 
-#need to control for blank controls
+#Mass specific Metabolic Rate for day 11
+data2$msMR11<- data$resp_day11/(data2$total_time_day10 * data$mass_day10)
+```
+
+#Controlling for blank controls
+```{r}
+#Assign the blanks to an object
 data3 <- data2%>%
   group_by(cohort_day, tape)%>%
   filter(Site_name=="Blank")%>%
   summarise(mean.blank=mean(MR11,na.rm=TRUE))
+
 #check columns
 glimpse(data3)
 data3$mean.blank
 
-#merge data3 and data2 by cohort day and tape
+#merge data3 and data2 by cohort day and tape and create a mean blanks column
 data4 <- inner_join(data2, data3, by=c("cohort_day", "tape"))
-data4
 data4$mean.blank
 
 #do some corrections
@@ -89,64 +109,84 @@ glimpse(data5)
 data5.neg <- data5%>% 
   filter(MR11.cor<0)%>%
   dim()
-  #select(.,c("cohort_day","tape", "uniqueID", "MR11.cor"))
-   #fwrite(data5.neg,"2018-05-31_negative_MR.csv")
-
-#ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
 ```
 
-## Figures of mr between hosts
+## Figure of Metabolic Rate between Hosts
 ```{r}
+#Boxplot
 ggplot(data5, aes(x=Host, y=MR11.cor))+geom_boxplot()
+
+#Histogram
 ggplot(data5, aes(x=MR11.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
 ```
-#Calculate eclosion days
+
+###Calculate eclosion days
 ```{r}
 data5$neweclosions<-difftime(as.Date(data5$eclosion_date), as.Date(data5$Eclosion_reference_date),units=c("days"))+15
 ```
-#Explore eclosion data
+
+###Figures of eclosion and metabolic rate data
 ```{r}
-ggplot(data5.treatsub, aes(x=MR11.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)+facet_grid(.~treatment)
-
-a<-ggplot(data5.treatsub, aes(x=MR11.cor, fill=(Host)))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
-
-b<-ggplot(data5.treatsub, aes(x=neweclosions, fill=(Host)))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
-
-#4 panel
-install.packages("gridExtra")
-library(gridExtra)
-grid.arrange(nrow=2,a,b)
-
-```
-###Test differences in eclosion timing between host and experiment
-```{r}
-mod1<- aov(neweclosions~Host*treatment, data=data5.treatsub)
-summary(mod1)
-
-#narrow down to SO
-data5.SO<-data5.treatsub%>%
-  filter(treatment=="SO")
-
-mod2<-aov(neweclosions~Host, data=data5.SO)
-summary(mod2)
-
-#how balanced it is
-data5.SO%>%
-  group_by(Host)%>%
-  summarise(n=length(Host))
-```
-#Explore relationship between eclosion days and MR
-**scatter plots**
-```{r}
-
 data5.treatsub<-data5%>%
   filter(treatment!="GC"&treatment!="")
 
+#Histogram comparison between MR of RT & SO
+ggplot(data5.treatsub, aes(x=MR11.cor, fill=Host))+geom_histogram(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+#Density comparison between MR of RT & SO
+ggplot(data5.treatsub, aes(x=MR11.cor, fill=Host))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+#Histogram comparison between eclosion date of RT & SO
+ggplot(data5.treatsub, aes(x=neweclosions, fill=Host))+geom_histogram(position = "identity", alpha=.5)+facet_grid(.~treatment)
+
+#Density comparison between eclosion date of RT & SO
+ggplot(data5.treatsub, aes(x=neweclosions, fill=Host))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
+```
+
+###Test differences in eclosion timing between host and experiment
+Using ANOVA which tests differences between two or more means
+* The null hypothesis would be that the two means are equal
+* Significance would indicate two means are not equal
+*_One Way ANOVA_* compares two means from two independent groups, in this case eclosion date and host (specific to SO and RT)
+
+*_Two Way ANOVA_* compares means of two independent variables affecting one dependent variable, in this case the effect of Host and treatment (interacting) on eclosion
+```{r}
+#Focus only on RT and SO treatments
+data5.treatsub<-data5%>%
+  filter(treatment!="GC"&treatment!="")
+
+#Two Way ANOVA
+mod1<- aov(neweclosions ~ Host*treatment, data=data5.treatsub)
+summary(mod1)
+
+#narrow down to SO & RT
+data5.SO<-data5.treatsub%>%
+  filter(treatment=="SO")
+
+data5.RT<-data5.treatsub%>%
+  filter(treatment=="RT")
+
+#One Way ANOVA for RT & SO
+mod2RT<-aov(neweclosions~Host, data=data5.RT)
+summary(mod2RT)
+
+mod2SO<-aov(neweclosions~Host, data=data5.SO)
+summary(mod2SO)
+
+#how balanced it is
+data5.RT%>%
+  group_by(Host)%>%
+  summarise(n=length(Host))
+
+```
+
+###Explore relationship between eclosion days and MR
+**scatter plots**
+```{r}
 ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")+facet_grid(.~treatment)
 
 #plotting mr11 on the x axis and new eclosions on the y axis; color points by host, fit curve to data
 ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")
-
 
 #same - fit linear curve to data
 ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm")
@@ -155,78 +195,77 @@ ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()
 ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm") + xlim(-3.2,-.5)
 ```
 
-#Calculating lifespan
+###Calculating lifespan
 ```{r}
 data5.treatsub$lifespan<-difftime(as.Date(data5.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
 
-#finding negative lifespans
-lsneg <- data5.treatsub%>% 
-  filter(lifespan < 0) %>%
-  select(uniqueID,cohort_day, tape)
-
 ```
 
-## Figures of lifespan between hosts
+###Figures of lifespan between hosts
 ```{r}
-
 ggplot(data5.treatsub, aes(x=Host, y=lifespan))+geom_boxplot()
 ggplot(data5.treatsub, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
-
 ```
 
-#Associating MR with lifespan
+###Figures Associating MR with lifespan
 ```{r}
-
+#Loess
 ggplot(data5.treatsub,aes(x= MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + facet_grid(.~treatment)
 
-a<- ggplot(data5.treatsub,aes(x=MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") + facet_grid(.~treatment)
+#Linear
+ggplot(data5.treatsub,aes(x=MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") + facet_grid(.~treatment)
 
+#Taking the log
 ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + xlim(-3.2,-.5) + ylim(-.5, 150)
-
 ```
 
-
-## Repeat above, but with day 15
+## Repeat above, but with day 15, starting with time sequence
 ```{r}
 glimpse(data$purge_time_2)
 hm(data$purge_time_2)
 data$day15purge <- lubridate::hour(hm(data$purge_time_2))+lubridate::minute(hm(data$purge_time_2))/60
-
-#figure out how to create a time sequence
-start<-13.26667
-end<- 14.5
-n=75
-seq(start,end, length.out = n)
 
 #Getting start and end (min and max) of purges and sample size for each host, cohort day, and tape
 param <- data%>%
   group_by(cohort_day, tape)%>%
   summarise(max=max(day15purge, na.rm=TRUE), min=min(day10purge, na.rm=TRUE), n=length(cohort_day))
 
-#goal: for this section, we want a sequence of times for day 10 purge
+#goal: for this section, we want a sequence of times for day 15 purge
 data2.15 <- data%>%
   group_by(cohort_day, tape)%>%
   mutate(.,day15purge.trans=seq(from = min(day15purge, na.rm=TRUE), to = max(day15purge, na.rm=TRUE), length.out = length(Host)))
 glimpse(data2.15)
+```
 
-#calculating start and end time
+###Calculating start and end time for total amount of hours of CO2 production
+```{r}
 glimpse(data$resp_time_2)
 hms(data$resp_time_2)
 data2.15$day15resp <- lubridate::hour(hms(data$resp_time_2))+lubridate::minute(hms(data$resp_time_2))/60
 
+#Obtaining total time in hours
 data2.15$total_time_day15 <- (24 - data2.15$day15purge.trans) + data2.15$day15resp
+```
 
+###Metabolic Rate Calculation
+```{r}
 #getting denominator for mass-specific mr
 data2.15$total_time_day15 * data$mass_day14
 
+#Metabolic Rate
 data2.15$MR15<- data$resp_day15/(data2.15$total_time_day15)
-data2.15$msMR15<- data$resp_day15/(data2.15$total_time_day15 * data$mass_day14)
 
-#need to control for blank controls
+#Mass specfic metabolic rate
+data2.15$msMR15<- data$resp_day15/(data2.15$total_time_day15 * data$mass_day14)
+```
+
+###Controlling for Blanks
+```{r}
 data3.15 <- data2.15%>%
   group_by(cohort_day, tape)%>%
   filter(Site_name=="Blank")%>%
   summarise(mean.blank2=mean(MR15,na.rm=TRUE))
+
 #check columns
 glimpse(data3.15)
 data3.15$mean.blank2
@@ -241,26 +280,57 @@ data5.15 <- data4.15%>%
   mutate(MR15.cor = MR15 - mean.blank2, msMR15.cor = msMR15 - mean.blank2)
 glimpse(data5.15)
 
+#Filter out negatives
 data5.15.neg <- data5.15%>% 
-  filter(MR15.cor<0)%>%
+  filter(MR15.cor<0)
+```
 
-  #select(.,c("cohort_day","tape", "uniqueID", "MR11.cor"))
-   #fwrite(data5.neg,"2018-05-31_negative_MR.csv")
+###Calculate Eclosions Dates
+```{r}
+#Focus only on RT and SO treatments
+data5.15.treatsub<-data5%>%
+  filter(treatment!="GC"&treatment!="")
 
-#ggplot(data5.neg, aes(x=MR11.cor))+geom_histogram()
-
-#Neweclosions
 data5.15$neweclosions <- difftime(as.Date(data5.15$eclosion_date), as.Date(data5.15$Eclosion_reference_date),units=c("days"))+15
 
-#figures of mr b/w hosts
-
-ggplot(data5.15, aes(x=Host, y=MR15.cor))+geom_boxplot()
-
-ggplot(data5.15, aes(x=MR15.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
-#eclosion data
 data5.15.treatsub$neweclosions<-difftime(as.Date(data5.15.treatsub$eclosion_date), as.Date(data5.15.treatsub$Eclosion_reference_date),units=c("days"))+15
+```
 
-#scatter plots
+###Test differences in eclosion timing between host and experiment for Day 15
+```{r}
+#Two Way ANOVA
+mod1<- aov(neweclosions ~ Host*treatment, data=data5.15.treatsub)
+summary(mod1)
+
+#narrow down to SO & RT
+data5.15SO<-data5.15.treatsub%>%
+  filter(treatment=="SO")
+
+data5.15RT<-data5.15.treatsub%>%
+  filter(treatment=="RT")
+
+#One Way ANOVA for RT & SO
+mod2RT15<-aov(neweclosions~Host, data=data5.15)
+summary(mod2RT15)
+
+mod2SO15<-aov(neweclosions~Host, data=data5.15)
+summary(mod2SO15)
+
+#how balanced it is
+data5.SO%>%
+  group_by(Host)%>%
+  summarise(n=length(Host))
+```
+
+### Figures looking at MR between hosts
+```{r}
+ggplot(data5.15, aes(x=Host, y=MR15.cor))+geom_boxplot()
+ggplot(data5.15, aes(x=MR15.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5)
+```
+
+###Explore relationship between eclosion days and MR
+**scatter plots**
+```{r}
 data5.15.treatsub<-data5.15%>%
   filter(treatment!="GC"&treatment!="")
 
@@ -274,8 +344,10 @@ ggplot(data5.15.treatsub,aes(x=MR15.cor, y=neweclosions, colour=Host))+geom_poin
 
 #could log transform mr to make it more linear
 ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="lm") + xlim(-3.2,-.5)
+```
 
-
+###Figures associating MR with lifespan
+```{r}
 #mr15 w lifespan
 data5.15.treatsub$lifespan<-difftime(as.Date(data5.15.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.15.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
 
@@ -284,20 +356,10 @@ ggplot(data5.15.treatsub,aes(x= MR15.cor, y=lifespan, colour=Host))+geom_point()
 ggplot(data5.15.treatsub,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") + facet_grid(.~treatment)
 
 ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm")
-
-grid.arrange(nrow=2,a,b)
 ```
 
 #Negative binomial regression to determine the effect of metabolic rate on lifespan between hosts and its' treatments
 ```{r}
-library(MASS)
-#determining class
-class(data5.15.treatsub$lifespan)
-data5.15.treatsub$lifespan<-as.numeric(data5.15.treatsub$lifespan)
-
-#model2<-glm.nb(lifespan~MR15.cor*Host*treatment, data=data5.15.treatsub)
-
-
 #separating out RT and SO 
 RT15 <- data5.15.treatsub%>%
     filter(treatment=="RT")
@@ -306,19 +368,27 @@ SO15 <- data5.15.treatsub%>%
     filter(treatment=="SO")
 
 #RT summary (no stat significance)
-mod3<- glm.nb(lifespan~MR15.cor*Host, data=RT15)
+mod3<- glm.nb(lifespan~MR15.cor*Host + mass_day14, data=RT15)
 summary(mod3)
+
+mod3.1<-glm.nb(lifespan~msMR15.cor*Host, data=RT15)
+summary(mod3.1)
 
 #SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
   #mod4 shows interaction b/w host and mr
-mod4<-glm.nb(lifespan~MR15.cor*Host, data=SO15)
+mod4<-glm.nb(lifespan~MR15.cor*Host+mass_day14, data=SO15)
 summary(mod4)
+
+mod4.1<-glm.nb(lifespan~msMR15.cor*Host, data=SO15)
+summary(mod4.1)
 
 #mod6 shows how mr and host individually relate to lifespan
 mod6<-glm.nb(lifespan~MR15.cor + Host, data=SO15)
 summary(mod6)
+```
 
-#Likelihood ratio tests of Negative Binomial Models
+*Likelihood ratio tests of Negative Binomial Models*
+```{r}
 m1 <- update(mod4, . ~ . - prog)
 anova(mod4, m1)
 
@@ -400,18 +470,25 @@ SO15.n <- finalmerge%>%
 mod3.n<- glm.nb(lifespan~MR15.cor*Host, data=RT15.n)
 summary(mod3.n)
 
-#SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
+#summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate (logvalue)
+#Coefficient describes relationship, i.e. for mod4SO, higher mass=higher life span according to this model (neg. binomial regression) (p value high=supports null hypothesis)
   #mod4 shows interaction b/w host and mr
-mod4.n<-glm.nb(lifespan~MR15.cor*Host, data=SO15.n)
-summary(mod4.n)
+mod4.nRT<-glm.nb(lifespan~MR15.cor*Host + mass_day14, data=RT15.n)
+summary(mod4.nRT)
+
+mod4.nSO<-glm.nb(lifespan~MR15.cor*Host + mass_day14, data=SO15.n)
+summary(mod4.nSO)
 
 #mod6 shows how mr and host individually relate to lifespan
-mod6.n<-glm.nb(lifespan~MR15.cor + Host, data=SO15.n)
-summary(mod6)
+mod6.nSO<-glm.nb(lifespan~MR15.cor + Host + mass_day14, data=SO15.n)
+summary(mod6.nSO)
+
+mod6.nRT<-glm.nb(lifespan~MR15.cor + Host + mass_day14, data=RT15.n)
+summary(mod6.nRT)
 
 #Likelihood ratio tests of Negative Binomial Models
-m1.n <- update(mod4.n, . ~ . - prog)
-anova(mod4.n, m1.n)
+m1.nRT <- update(mod4.nRT, . ~ . - prog)
+anova(mod4.nRT, m1.n)
 
 #Checking model assumption -- is negative binomial regression (NBR) a good model for this data?
 ##Values close to 0 (estimates the dispersion parameter) strongly suggest the NBR model is more appropriate than the Poisson model
@@ -420,7 +497,7 @@ pchisq(2 * (logLik(mod4.n) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
 
 #output below indicates that Hawthorne is 0.432 times less likely to live than apple
 #confidence interval
-(est <- cbind(Estimate = coef(mod6.n), confint(mod6.n)))
+(est <- cbind(Estimate = coef(mod4.nRT), confint(mod4.nRT)))
 #incident rate ratio - lifespan ratio
 exp(est)
 
@@ -428,13 +505,21 @@ exp(est)
 filSO15.n<- SO15.n%>%
   filter(MR15.cor!= "NA"&lifespan !="NA")
 
+filRT15.n<- RT15.n%>%
+  filter(MR15.cor!= "NA"&lifespan !="NA")
+
 #Calculate the predicted values
-filSO15.n$predvalues <- predict(mod6.n, type = "response")
+filSO15.n$predvalues <- predict(mod4.nSO, type = "response")
+glimpse(filSO15.n)
+
+filRT15.n$predvalues <- predict(mod4.nRT, type = "response")
 glimpse(filSO15.n)
 
 
 #overlay of real data(points)  with predicted values(line)
-b<-ggplot(filSO15.n,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filSO15.n, aes(x=MR15.cor, y=predvalues, colour=Host))
+ggplot(filSO15.n,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filSO15.n, aes(x=MR15.cor, y=predvalues, colour=Host))
+
+ggplot(filRT15.n,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filRT15.n, aes(x=MR15.cor, y=predvalues, colour=Host))
 
 #comparison of non-pupal deaths w/ pupal deaths
 grid.arrange(nrow=2,a,b)
@@ -444,17 +529,16 @@ grid.arrange(nrow=2,a,b)
 ```{r}
 #install.packages(c("survival", "survminer"))
 #install.packages(c("ggpubr", "magrittr"))
-library(survival)
-library(survminer)
+
 
 #Assign censored data and create new column
-finalmerge$status[finalmerge$lifespan == 0] <- 0
-finalmerge$status[finalmerge$lifespan > 0 ] <- 1
-finalmerge
+finalmerge$status[finalmerge$lifespan >= 0] <- 1
+fmerge <- finalmerge %>%
+      filter(treatment != "")
+
 
 #Normalize data
 #install.packages("BBmisc")
-library(BBmisc)
 n.finalmerge<-normalize(finalmerge [], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
 
 #compute kaplan-Meier survival estimate-so compute the survival probability by host & treatment:
@@ -482,7 +566,7 @@ summary(fit2)$table
 summary(fit3)$table
 
 # Visualize curves (Change color, linetype by strata, risk.table color by strata)
-h<-ggsurvplot(fit1,
+ggsurvplot(fit1,
           pval = TRUE, conf.int = TRUE,
           risk.table = TRUE, # Add risk table
           risk.table.col = "strata", # Change risk table color by groups
@@ -494,7 +578,7 @@ h<-ggsurvplot(fit1,
            legend.title = "Conditions",
           pval.size=4)
 
-tt<-ggsurvplot(fit2,
+ggsurvplot(fit2,
           pval = TRUE, conf.int = FALSE,
           risk.table = TRUE, # Add risk table
           risk.table.col = "strata", # Change risk table color by groups
@@ -506,19 +590,139 @@ tt<-ggsurvplot(fit2,
           legend.title = "Conditions",
           pval.size=4)
 
-both<-ggsurvplot(fit3,
+ggsurvplot(fit3,
           pval = TRUE, conf.int = FALSE,
           risk.table = TRUE, # Add risk table
           risk.table.col = "strata", # Change risk table color by groups
-          linetype = c("dashed","solid", "dashed", "dashed","solid"), # Change line type by groups
+          linetype = c("dashed","solid", "dashed", "dashed","solid"), # Change line type                                                                               by groups
           surv.median.line = "hv", # Specify median survival
           ggtheme = theme_bw(), # Change ggplot2 theme
           palette = c("#F9E996","#FFD700","#A9A9A9","#496DA1","#204A87"),
           xlab = "Lifespan in days",
           legend.title = "Conditions",
           pval.size=4)
-install.packages("grid")
-grid.arrange(grobs=lapply(list(h, tt, both), grobTree), ncol=3)
+```
+
+#Cox Regression
+```{r}
+#univariate
+res.cox1 <- coxph(Surv(lifespan, status) ~ Host, data = fmerge)
+res.cox1
+summary(res.cox1)
+
+res.cox2 <- coxph(Surv(lifespan, status) ~ treatment, data = fmerge)
+res.cox2
+summary(res.cox2)
+
+#multivariate
+covariates <- c("host", "treatment", "MR15.cor","mass_day14")
+#For RT
+univ_formulasRT <- sapply(covariates,
+                        function(x) as.formula(paste('Surv(lifespan, status)~', fmergeRT)))
+#For SO
+univ_formulasSO <- sapply(covariates,
+                        function(x) as.formula(paste('Surv(lifespan, status)~', fmergeSO)))
+                        
+univ_modelsRT <- lapply(univ_formulasRT, function(x){coxph(x, data = fmergeRT)})
+univ_modelsSO <- lapply(univ_formulasSO, function(x){coxph(x, data = fmergeSO)})
+
+# Extract data 
+#RT
+univ_resultsRT <- lapply(univ_modelsRT,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+#SO
+univ_resultsSO <- lapply(univ_modelsSO,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+
+
+resRT <- t(as.data.frame(univ_resultsRT, check.names = FALSE))
+as.data.frame(resRT)
+resSO <- t(as.data.frame(univ_resultsSO, check.names = FALSE))
+as.data.frame(resSO)
+
+#Multivariate case
+#Testing interaction between Host, Treatment, and MR -- Shows interaction b/w treatment & Host
+res.cox <- coxph(Surv(lifespan, status) ~ Host*treatment*MR15.cor + mass_day14, data =  fmerge)
+summary(res.cox)
+
+#Split up treatments into: SO & RT
+fmergeSO <- fmerge%>%
+  filter(treatment == "SO")
+
+fmergeRT <- fmerge%>%
+  filter(treatment == "RT")
+
+
+#Coefficient describes relationship: for Cox Regression, coefficient describes relationship to likelihood of death, so neg coefficient for RTmass, lower masses will be more likely to die
+#Test interaction between Host, RT, and MR
+res.coxRT <- coxph(Surv(lifespan, status) ~ Host*MR15.cor + mass_day14, data =  fmergeRT)
+summary(res.coxRT)
+
+#Test interaction between Host, SO, and MR
+res.coxSO <- coxph(Surv(lifespan, status) ~ Host*MR15.cor + mass_day14, data =  fmergeSO)
+summary(res.coxSO)
+
+
+
+#Visualize the estimated distribution of lifespan
+  # Plot the baseline survival function
+ggsurvplot(survfit(res.coxRT),
+           ggtheme = theme_minimal(),
+           xlab = "lifespan")
+
+
+ggsurvplot(data= finalmerge, survfit(res.cox1), color = "#2E9FDF",
+           ggtheme = theme_minimal(),
+           xlab = "lifespan")
+
+ggsurvplot(data= finalmerge, survfit(res.cox2), color = "#2E9FDF",
+           ggtheme = theme_minimal(),
+           xlab = "lifespan")
+
+#New data, with the impact of treatment only
+treatment_df <- with(finalmerge,
+               data.frame(treatment = c(1, 1), 
+                          lifespan = c(1, 1),
+                          Host = c(1,2)
+                          )
+               )
+treatment_df
+
+# Survival curves
+fit <- survfit(res.cox, newdata = treatment_df)
+ggsurvplot(fit, conf.int = TRUE, legend.labs=c("Host=Apple", "Host=Haw"),
+           ggtheme = theme_minimal())
+
 ```
 
 # Session Info
