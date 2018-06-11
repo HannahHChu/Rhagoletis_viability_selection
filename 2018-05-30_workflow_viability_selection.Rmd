@@ -1,9 +1,9 @@
 ---
 title: "workflow_viability_selection"
 output:
-  html_document: 
-    toc: yes
   pdf_document: default
+  html_document:
+    toc: yes
 ---
 # Library
 ```{r}

@@ -1,0 +1,166 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+###Negative binomial regression to determine the effect of metabolic rate on lifespan between hosts and its' treatments
+```{r}
+#separating out RT and SO 
+RT15 <- data5.15.treatsub%>%
+  filter(treatment=="RT")
+
+SO15 <- data5.15.treatsub%>%
+  filter(treatment=="SO")
+
+#RT summary (no stat significance)
+mod3<- glm.nb(lifespan~MR15.cor*Host + mass_day14, data=RT15)
+summary(mod3)
+
+mod3.1<-glm.nb(lifespan~msMR15.cor*Host, data=RT15)
+summary(mod3.1)
+
+#SO summary : HostHaw (in reference to apple) - as lifespan increases, the MR decreases by the estimate
+#mod4 shows interaction b/w host and mr
+mod4<-glm.nb(lifespan~MR15.cor*Host+mass_day14, data=SO15)
+summary(mod4)
+
+mod4.1<-glm.nb(lifespan~msMR15.cor*Host, data=SO15)
+summary(mod4.1)
+
+#mod6 shows how mr and host individually relate to lifespan
+mod6<-glm.nb(lifespan~MR15.cor + Host, data=SO15)
+summary(mod6)
+```
+
+**Likelihood ratio tests of Negative Binomial Models**
+```{r}
+m1 <- update(mod4, . ~ . - prog)
+anova(mod4, m1)
+
+#Checking model assumption -- is negative binomial regression (NBR) a good model for this data?
+##Values close to 0 (estimates the dispersion parameter) strongly suggest the NBR model is more appropriate than the Poisson model
+mod5 <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15)
+pchisq(2 * (logLik(mod4) - logLik(mod5)), df = 1, lower.tail = FALSE)
+
+#output below indicates that Hawthorne is 0.432 times less likely to live than apple
+#confidence interval
+(est <- cbind(Estimate = coef(mod4), confint(mod4)))
+#incident rate ratio - lifespan ratio
+exp(est)
+
+#Filter out all the NAs in order to have same dimensions for predvalues
+filSO15<- SO15%>%
+  filter(MR15.cor!= "NA"&lifespan !="NA")
+
+#Calculate the predicted values
+filSO15$predvalues <- predict(mod6, type = "response")
+glimpse(filSO15)
+
+
+#overlay of real data(points)  with predicted values(line)
+a<-ggplot(filSO15,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+geom_line(data=filSO15, aes(x=MR15.cor, y=predvalues, colour=Host))
+```
+
+##Values close to 0 (estimates the dispersion parameter) strongly suggest the NBR model is more appropriate than the Poisson model
+```{r}
+mod5.n <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15.n)
+pchisq(2 * (logLik(mod4.nRT) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
+mod5.n <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15.n)
+pchisq(2 * (logLik(mod4.nSO) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
+
+#mod6 shows how mr and host individually relate to lifespan
+mod6.nSO<-glm.nb(lifespan~MR15.cor + Host + mass_day14, data=SO15.n)
+summary(mod6.nSO)
+
+mod6.nRT<-glm.nb(lifespan~MR15.cor + Host + mass_day14, data=RT15.n)
+summary(mod6.nRT)
+```
+
+# Kaplan-Meier Survival Estimate
+```{r}
+#install.packages(c("survival", "survminer"))
+#install.packages(c("ggpubr", "magrittr"))
+#Assign censored data and create new column
+finalmerge$status[finalmerge$lifespan >= 0] <- 1
+fmerge <- finalmerge %>%
+      filter(treatment != "")
+
+
+#Normalize data
+#install.packages("BBmisc")
+n.finalmerge<-normalize(finalmerge [], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+
+#compute kaplan-Meier survival estimate-so compute the survival probability by host & treatment:
+  #fit1 computes survival probability by Host only
+  #fit2 computes survival probability by Treatment only
+  #fit3 computes survival probability by Host + Treatment
+
+fit1 <- survfit(Surv(lifespan, status) ~ Host, data = finalmerge)
+print(fit1)
+
+fit2 <- survfit(Surv(lifespan, status) ~ treatment, data = finalmerge)
+print(fit2)
+
+fit3 <- survfit(Surv(lifespan, status) ~ Host + treatment, data = finalmerge)
+print(fit3)
+
+# Summary of survival curves
+summary(fit1) 
+summary(fit2)
+summary(fit3)
+
+# Access to the sort summary table
+summary(fit1)$table
+summary(fit2)$table
+summary(fit3)$table
+
+# Visualize curves (Change color, linetype by strata, risk.table color by strata)
+ggsurvplot(fit1,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          xlab = "Lifespan in days",
+           legend.title = "Conditions",
+          pval.size=4)
+
+ggsurvplot(fit2,
+          pval = TRUE, conf.int = FALSE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#DBAECB", "#2E9FDF","#E7B800"),
+          xlab = "Lifespan in days",
+          legend.title = "Conditions",
+          pval.size=4)
+
+ggsurvplot(fit3,
+          pval = TRUE, conf.int = FALSE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = c("dashed","solid", "dashed", "dashed","solid"), # Change line type                                                                               by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#F9E996","#FFD700","#A9A9A9","#496DA1","#204A87"),
+          xlab = "Lifespan in days",
+          legend.title = "Conditions",
+          pval.size=4)
+
+
+#Taking the log
+ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + xlim(-3.2,-.5) + ylim(-.5, 150) +labs(x = "Metabolic Rate (mL CO2/hr)", y = "Lifespan (days)", title = "Day 11 (log)") + theme(
+        axis.ticks.x=element_blank(),legend.position="bottom",
+        axis.ticks.y=element_blank(),panel.background = element_blank(),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
+
+
+ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=lifespan, colour=Host))+geom_point()+stat_smooth(method="lm") +labs(x = "Metabolic Rate (mL CO2/hr)", y = "Lifespan (days)", title = "Day 15") + theme(
+        axis.ticks.x=element_blank(),legend.position="bottom",
+        axis.ticks.y=element_blank(),panel.background = element_blank(),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
+```
