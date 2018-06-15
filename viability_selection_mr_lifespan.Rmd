@@ -9,7 +9,7 @@ output:
     toc: yes
 ---
 
-#Libraries
+# Libraries
 ```{r}
 library(dplyr) #data parsing library
 library(data.table) #data parsing library mainly for reading and writing out
@@ -30,19 +30,20 @@ Data are publicly available via [github](https://raw.githubusercontent.com/adngu
 data<- fread("https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-05-30_rhagoletis_masterdata_data_slice.csv")
 
 #look at summary of data
-glimpse(data)
+#glimpse(data)
 ```
 
-#Calculating metabolic rates
+# Calculating metabolic rates
 Metabolic Rate = CO2 production/ hours
 Mass Specific Metabolic Rate = CO2 production/hrs per mass
 **Problem** with purge_time_1: only start and stop times except for apple cohort 1
 **Solution** create time sequence for each cohort from start to end and merge into master data sheet
-##Day 11
-###Creating the time sequence
+
+# Day 11 Cohort
+## Creating the time sequence
 ```{r}
-glimpse(data$purge_time_1)
-hm(data$purge_time_1)
+#glimpse(data$purge_time_1)
+#hm(data$purge_time_1)
 data$day10purge <- lubridate::hour(hm(data$purge_time_1))+lubridate::minute(hm(data$purge_time_1))/60
 
 #Obtaining start and end (min and max) of purges and smaple size for each host, cohort day, and tape
@@ -54,28 +55,27 @@ param <- data%>%
 data2 <- data%>%
   group_by(cohort_day, tape)%>%
   mutate(.,day10purge.trans=seq(from = min(day10purge, na.rm=TRUE), to = max(day10purge, na.rm=TRUE), length.out = length(Host)))
-glimpse(data2)
+#glimpse(data2)
 
 #cohort 2&3 for apple have the right sequence of purge times so they(day10purge) need to be replaced into corresponding day10purge.trans column
   #extract number of rows we want to replace
 data2[1:500,]%>%
-  filter(cohort_day < 4)%>%
-  dim()
+  filter(cohort_day < 4)
 data2[1:211,46]<- data2[1:211,45]
-data2[1:211,46]
+#data2[1:211,46]
 ```
 
-###Calculating start and end time for total amount of hours of CO2 production
+## Calculating start and end time for total amount of hours of CO2 production
 ```{r}
-glimpse(data$resp_time_1)
-hms(data$resp_time_1)
+#glimpse(data$resp_time_1)
+#hms(data$resp_time_1)
 data2$day10resp <- lubridate::hour(hms(data$resp_time_1))+lubridate::minute(hms(data$resp_time_1))/60
 
 #reformatting to obtain positive values
 data2$total_time_day10 <- (24 - data2$day10purge.trans) + data2$day10resp
 ```
 
-###Metabolic Rate Calculation
+## Metabolic Rate Calculation
 ```{r}
 #getting denominator for mass-specific mr
 data2$total_time_day10 * data$mass_day10
@@ -87,7 +87,7 @@ data2$MR11<- data$resp_day11/(data2$total_time_day10)
 data2$msMR11<- data$resp_day11/(data2$total_time_day10 * data$mass_day10)
 ```
 
-#Controlling for blank controls
+## Controlling for blank controls
 ```{r}
 #Assign the blanks to an object
 data3 <- data2%>%
@@ -96,7 +96,7 @@ data3 <- data2%>%
   summarise(mean.blank=mean(MR11,na.rm=TRUE))
 
 #check columns
-glimpse(data3)
+#glimpse(data3)
 data3$mean.blank
 
 #merge data3 and data2 by cohort day and tape and create a mean blanks column
@@ -106,7 +106,7 @@ data4$mean.blank
 #do some corrections
 data5 <- data4%>%
   mutate(MR11.cor = MR11 - mean.blank, msMR11.cor = msMR11 - mean.blank)
-glimpse(data5)
+#glimpse(data5)
 
 data5.neg <- data5%>% 
   filter(MR11.cor<0)
@@ -130,14 +130,14 @@ ggplot(data5, aes(x=MR11.cor, fill=Host))+geom_histogram(position = "identity", 
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-###Calculate eclosion days
+## Calculate eclosion days
 ```{r}
 data5$neweclosions<-difftime(as.Date(data5$eclosion_date), as.Date(data5$Eclosion_reference_date),units=c("days"))+15
 
 data5$neweclosions <- as.numeric(data5$neweclosions)
 ```
 
-###Figures of eclosion and metabolic rate data
+## Figures of eclosion and metabolic rate data
 ```{r}
 data5.treatsub<-data5%>%
   filter(treatment!="GC"&treatment!="")
@@ -166,7 +166,7 @@ ggplot(data5.treatsub, aes(x=neweclosions, fill=Host))+geom_histogram(position =
 ggplot(data5.treatsub, aes(x=neweclosions, fill=Host))+geom_density(position = "identity", alpha=.5)+facet_grid(.~treatment)
 ```
 
-###Test differences in eclosion timing between host and experiment
+## Test differences in eclosion timing between host and experiment (ANOVA)
 Using ANOVA which tests differences between two or more means
 * The null hypothesis would be that the two means are equal
 * Significance would indicate two means are not equal
@@ -200,10 +200,10 @@ summary(mod2SO)
 data5.RT%>%
   group_by(Host)%>%
   summarise(n=length(Host))
-
 ```
+Both the one way and two way ANOVA tests showed significance between the two means (meaning they are not equal). The two way ANOVA suggests that there is a difference in number of days to eclosion based on treatment type - favorable conditions vs. simulated overwintering. Therefore, a one way ANOVA was done for each treatment to test whether there is any significance between host type and days to eclosion. The one way ANOVA showed significance for both treatments; however, the simulated overwintering samples had a lower p value, which indicates more signigicance.
 
-###Explore relationship between eclosion days and MR
+## Explore relationship between eclosion days and MR
 **scatter plots**
 ```{r}
 ggplot(data5.treatsub,aes(x=MR11.cor, y=neweclosions, colour=Host))+geom_point()+stat_smooth(method="loess")+facet_grid(.~treatment) +labs(x = "Metabolic Rate (mL CO2/hr)", y = "New Eclosions", title = "Day 11") + theme(
@@ -231,13 +231,13 @@ ggplot(data5.treatsub,aes(x=log10(MR11.cor), y=neweclosions, colour=Host))+geom_
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-###Calculating lifespan
+## Calculating lifespan
 ```{r}
 data5.treatsub$lifespan<-difftime(as.Date(data5.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
 
 ```
 
-###Figures of lifespan between hosts
+## Figures of lifespan between hosts
 ```{r}
 ggplot(data5.treatsub, aes(x=Host, y=lifespan))+geom_boxplot()
 ggplot(data5.treatsub, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "identity", alpha=.5) +labs(x = "Lifespan (days)", y = "Number of Individuals", title = "Day 11") + theme(
@@ -246,7 +246,7 @@ ggplot(data5.treatsub, aes(x=lifespan, fill=(Host)))+geom_histogram(position = "
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-###Figures Associating MR with lifespan
+## Figures Associating MR with lifespan
 ```{r}
 #Loess
 ggplot(data5.treatsub,aes(x= MR11.cor, y=lifespan, colour=Host))+geom_point()+stat_smooth(method="loess") + facet_grid(.~treatment)+labs(x = "Metabolic Rate (mL CO2/hr)", y = "Lifespan (days)", title = "Day 11") + theme(
@@ -261,10 +261,11 @@ ggplot(data5.treatsub,aes(x=MR11.cor, y=lifespan, colour=Host))+geom_point()+sta
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
+# Day 15 Cohort
 ## Repeat above, but with day 15, starting with time sequence
 ```{r}
-glimpse(data$purge_time_2)
-hm(data$purge_time_2)
+#glimpse(data$purge_time_2)
+#hm(data$purge_time_2)
 data$day15purge <- lubridate::hour(hm(data$purge_time_2))+lubridate::minute(hm(data$purge_time_2))/60
 
 #Getting start and end (min and max) of purges and sample size for each host, cohort day, and tape
@@ -276,20 +277,20 @@ param <- data%>%
 data2.15 <- data%>%
   group_by(cohort_day, tape)%>%
   mutate(.,day15purge.trans=seq(from = min(day15purge, na.rm=TRUE), to = max(day15purge, na.rm=TRUE), length.out = length(Host)))
-glimpse(data2.15)
+#glimpse(data2.15)
 ```
 
-###Calculating start and end time for total amount of hours of CO2 production
+## Calculating start and end time for total amount of hours of CO2 production
 ```{r}
-glimpse(data$resp_time_2)
-hms(data$resp_time_2)
+#glimpse(data$resp_time_2)
+#hms(data$resp_time_2)
 data2.15$day15resp <- lubridate::hour(hms(data$resp_time_2))+lubridate::minute(hms(data$resp_time_2))/60
 
 #Obtaining total time in hours
 data2.15$total_time_day15 <- (24 - data2.15$day15purge.trans) + data2.15$day15resp
 ```
 
-###Metabolic Rate Calculation
+## Metabolic Rate Calculation
 ```{r}
 #getting denominator for mass-specific mr
 data2.15$total_time_day15 * data$mass_day14
@@ -301,7 +302,7 @@ data2.15$MR15<- data$resp_day15/(data2.15$total_time_day15)
 data2.15$msMR15<- data$resp_day15/(data2.15$total_time_day15 * data$mass_day14)
 ```
 
-###Controlling for Blanks
+## Controlling for Blanks
 ```{r}
 data3.15 <- data2.15%>%
   group_by(cohort_day, tape)%>%
@@ -309,25 +310,24 @@ data3.15 <- data2.15%>%
   summarise(mean.blank2=mean(MR15,na.rm=TRUE))
 
 #check columns
-glimpse(data3.15)
+#glimpse(data3.15)
 data3.15$mean.blank2
 
 #merge data3 and data2 by cohort day and tape
 data4.15 <- inner_join(data2.15, data3.15, by=c("cohort_day", "tape"))
-data4.15
 data4.15$mean.blank2
 
 #do some corrections
 data5.15 <- data4.15%>%
   mutate(MR15.cor = MR15 - mean.blank2, msMR15.cor = msMR15 - mean.blank2)
-glimpse(data5.15)
+#glimpse(data5.15)
 
 #Filter out negatives
 data5.15.neg <- data5.15%>% 
   filter(MR15.cor<0)
 ```
 
-###Calculate Eclosions Dates
+## Calculate Eclosions Dates
 ```{r}
 #Focus only on RT and SO treatments
 data5.15.treatsub<-data5%>%
@@ -338,7 +338,7 @@ data5.15$neweclosions <- difftime(as.Date(data5.15$eclosion_date), as.Date(data5
 data5.15.treatsub$neweclosions<-difftime(as.Date(data5.15.treatsub$eclosion_date), as.Date(data5.15.treatsub$Eclosion_reference_date),units=c("days"))+15
 ```
 
-###Test differences in eclosion timing between host and experiment for Day 15
+## Test differences in eclosion timing between host and experiment for Day 15 (ANOVA)
 ```{r}
 #Two Way ANOVA
 mod1<- aov(neweclosions ~ Host*treatment, data=data5.15.treatsub)
@@ -358,13 +358,14 @@ summary(mod2RT15)
 mod2SO15<-aov(neweclosions~Host, data=data5.15)
 summary(mod2SO15)
 
-#how balanced it is
+#how balanced is it?
 data5.SO%>%
   group_by(Host)%>%
   summarise(n=length(Host))
 ```
+This ANOVA test reflects the same results from the ANOVA done on Day 11.
 
-### Figures looking at MR between hosts
+## Figures looking at MR between hosts
 ```{r}
 ggplot(data5.15, aes(x=Host, y=MR15.cor))+geom_boxplot()
 ggplot(data5.15, aes(x=MR15.cor, fill=(Host)))+geom_histogram(position = "identity", alpha=.5) +labs(x = "Metabolic Rate (mL CO2/hr)", y = "Number of Individuals", title = "Day 15") + theme(
@@ -373,9 +374,10 @@ ggplot(data5.15, aes(x=MR15.cor, fill=(Host)))+geom_histogram(position = "identi
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-###Explore relationship between eclosion days and MR
+## Explore relationship between eclosion days and MR
 **scatter plots**
 ```{r}
+#Filter out GC and blank treatments
 data5.15.treatsub<-data5.15%>%
   filter(treatment!="GC"&treatment!="")
 
@@ -403,7 +405,7 @@ ggplot(data5.15.treatsub,aes(x=log10(MR15.cor), y=neweclosions, colour=Host))+ge
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-###Figures associating MR with lifespan
+## Figures associating MR with lifespan
 ```{r}
 #mr15 w lifespan
 data5.15.treatsub$lifespan<-difftime(as.Date(data5.15.treatsub$Adult_death_date, na.rm=TRUE), as.Date(data5.15.treatsub$eclosion_date, na.rm=TRUE),units=c("days"))
@@ -419,7 +421,7 @@ ggplot(data5.15.treatsub,aes(x=MR15.cor, y=lifespan, colour=Host))+geom_point()+
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
 ```
 
-# Double Checking Eclosion for Pupal Deaths
+## Double Checking Eclosion for Pupal Deaths
 ```{r}
 #Assign names to each column and column bind in order to simplify and find data easily 
 host <- data[,11]
@@ -430,7 +432,7 @@ edate <- data[,27]
 dcheck<-cbind(host, cd, wid, unid, edate)
 ```
 
-#Merging pupal death data sheet lifespans
+## Merging pupal death data sheet lifespans
 Data available on [github](https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-06-04_pupal_deaths_data.csv)
 ```{r}
 pupdeaths<- fread("https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-06-04_pupal_deaths_data.csv")
@@ -457,12 +459,13 @@ mergedata<- merge(data5.ls, mergedat1)
 #Finally, row bind the data with the desired conditions
 finalmerge<- rbind(data5.ls[,c("Host", "cohort_day", "well_id", "uniqueID", "lifespan", "MR15.cor","msMR15.cor", "treatment", "mass_day14")], mergedat1[,c("Host", "cohort_day", "well_id", "uniqueID", "lifespan", "MR15.cor","msMR15.cor", "treatment", "mass_day14")])
 
-glimpse(finalmerge)
+#glimpse(finalmerge)
 
 ```
 
-#Negative binomial regression reanalyzed with pupal death data
+## Negative binomial regression reanalyzed with pupal death data
 ```{r}
+#Filtering done to separate the two treatments
 RT15.n <- finalmerge%>%
     filter(treatment=="RT")
 
@@ -508,7 +511,7 @@ pchisq(2 * (logLik(mod4.nRT) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
 mod5.n <- glm(lifespan ~ Host*MR15.cor, family = "poisson", data = SO15.n)
 pchisq(2 * (logLik(mod4.nSO) - logLik(mod5.n)), df = 1, lower.tail = FALSE)
 
-#output below indicates that Hawthorne is 0.432 times less likely to live than apple
+#output below indicates that Hawthorn is 0.432 times less likely to live than apple
 #confidence interval
 (est <- cbind(Estimate = coef(mod4.nRT), confint(mod4.nRT)))
 #incident rate ratio - lifespan ratio
@@ -560,64 +563,62 @@ ggplot(filRT15.ms,aes(x=msMR15.cor, y=lifespan, colour=Host))+geom_point()+geom_
         axis.ticks.y=element_blank(),panel.background = element_blank(),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=12))
 ```
+Samples were split into two treatments, RT (favorable conditions) and SO (simulated overwintering). The dependent variable was lifespan, while the independent variables were metabolic rate in relation to host and mass. For this model, a negative coefficient of the log value would indicate a shorter lifespan since it produces a log-linear model in which a positive coefficient would indicate a (larger x and y value). 
 
-# Kaplan-Meier Survival Estimate
+Based on the RT treatment, only mass showed significance which suggests an individual with a larger mass would have a longer lifespan (positive coefficient). Analysis of the SO treatment showed significance in host type, metabolic rate, and mass, in which a lower metabolic rate would suggest longer lifespan (neg. coefficient), and larger mass would suggest longer lifespan(pos. coefficient). Hawthorn individuals also had an overall lower lifespan compared to apple. 
+
+Negative binomial regression was shown to be a good model by comparing its log likelihood to a poisson distribution. Values close to 0 (which estimates the dispersion parameter) strongly suggests the NBR model is more appropriate than the Poisson model for both treatments.
+
+## Kaplan-Meier Survival Estimate
 ```{r}
 #install.packages(c("survival", "survminer"))
 #install.packages(c("ggpubr", "magrittr"))
 #Assign censored data and create new column
 finalmerge$status[finalmerge$lifespan >= 0] <- 1
+
+#filter out unwanted treatments
 fmerge <- finalmerge %>%
       filter(treatment != "")
-fmergeRT <- finalmerge %>%
-      filter(treatment == "RT")
-fmergeSO <- finalmerge %>%
-      filter(treatment == "SO")
 
-#Normalize data
-#install.packages("BBmisc")
-n.finalmerge<-normalize(finalmerge [], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+#Filter out unwanted treatments
+finalmerge <- finalmerge %>%
+  filter(treatment != "")
 
 #compute kaplan-Meier survival estimate-so compute the survival probability by host & treatment:
-  #fit1 computes survival probability by Host only
-  #fit2 computes survival probability by Treatment only
-  #fit3 computes survival probability by Host + Treatment
+  #fit1 computes survival probability by Host + Treatment
 
-fit1 <- survfit(Surv(lifespan, status) ~ Host, data = finalmerge)
+fit1 <- survfit(Surv(lifespan, status) ~ Host + treatment, data = finalmerge)
 print(fit1)
-
-fit2 <- survfit(Surv(lifespan, status) ~ treatment, data = finalmerge)
-print(fit2)
-
-fit3 <- survfit(Surv(lifespan, status) ~ Host + treatment, data = finalmerge)
-print(fit3)
-
-# Summary of survival curves
-summary(fit1) 
-summary(fit2)
-summary(fit3)
 
 # Access to the sort summary table
 summary(fit1)$table
-summary(fit2)$table
-summary(fit3)$table
+
 
 # Visualize curves (Change color, linetype by strata, risk.table color by strata)
-ggsurvplot(fit3,
+ggsurvplot(fit1,
           pval = TRUE, conf.int = FALSE,
           risk.table = TRUE, # Add risk table
           risk.table.col = "strata", # Change risk table color by groups
           linetype = c("dashed","solid", "dashed", "dashed","solid"), # Change line type                                                                               by groups
           surv.median.line = "hv", # Specify median survival
           ggtheme = theme_bw(), # Change ggplot2 theme
-          palette = c("#F9E996","#FFD700","#A9A9A9","#496DA1","#204A87"),
+          palette = c("#F9E996","#FFD700","#496DA1","#204A87"),
           xlab = "Lifespan in days",
           legend.title = "Conditions",
           pval.size=4)
 ```
+The Kaplan-Meier Survival Estimate predicts the probability of survival from a specific time, so for this data, the estimates predict the probability of host survival at each time point in their lifespan. According to the figure, Hawthorn flies have an overall lower probability of survival over apple flies, which agrees with the previous analyses. This estimate is best used for categorical values, so MR and mass (which were all unique to the individul) were not good estimators and not used. 
 
-#Cox Regression
+## Cox Regression
 ```{r}
+
+#Split up treatments into: SO & RT
+fmergeSO <- fmerge%>%
+  filter(treatment == "SO")
+
+fmergeRT <- fmerge%>%
+  filter(treatment == "RT")
+
 #Merge the data for censoring (all labeled as status 1 for dead)
 covariates <- c("host", "treatment", "MR15.cor","mass_day14")
 #For RT
@@ -635,13 +636,6 @@ univ_modelsSO <- lapply(univ_formulasSO, function(x){coxph(x, data = fmergeSO)})
 res.cox <- coxph(Surv(lifespan, status) ~ Host*treatment*MR15.cor + mass_day14, data =  fmerge)
 summary(res.cox)
 
-#Split up treatments into: SO & RT
-fmergeSO <- fmerge%>%
-  filter(treatment == "SO")
-
-fmergeRT <- fmerge%>%
-  filter(treatment == "RT")
-
 
 #Coefficient describes relationship: for Cox Regression, coefficient describes relationship to likelihood of death, so neg coefficient for RTmass, lower masses will be more likely to die
 #Test interaction between Host, RT, and MR
@@ -652,6 +646,20 @@ summary(res.coxRT)
 res.coxSO <- coxph(Surv(lifespan, status) ~ Host*MR15.cor + mass_day14, data =  fmergeSO)
 summary(res.coxSO)
 ```
+Samples were split into two treatments, RT (favorable conditions) and SO (simulated overwintering). The dependent variable was lifespan, while the independent variables were metabolic rate in relation to host and mass. For this model, the coefficient relates x variables (metabolic rate, host, and mass) to likelihood of death (hazard rate). The dependent variable is lifespan again.
+
+The RT treatment only showed significance for mass (negative coefficient), in which a lower mass suggests a higher likelihood of death (i.e. longer lifespan). 
+
+The SO treatment showed significance for metabolic rate, host, and mass. The positive coefficient for the hawthorn flies and metabolic rate indicate higher likelihood of death if the individual is a host to hawthorn and/or the individual has a high metabolic rate. This agrees with the NBR model. However, the negative coefficient for mass indicates a higher likelihood of death with smaller masses which agrees with the NBR model. 
+
+# Conclusions
+Evolutionarily speaking, linking lower metabolic rate to longer lifespan makes sense since an organism who reserves its energy would take longer to develop, thus longer to die. For example early eclosers tend to have higher metabolic rate vs. late eclosers, so if a group of insects undergo diapause at the same time, those with higher metabolic rates risk eclosing too early in the season, before optimal conditions are available. Late eclosers have a higher energy reserve because they don't need as much energy with lower metabolic rates. This allows them to eclose at suitable seasonal time, lengthening their lifespan/hazard rate. 
+
+From this data, the cohorts placed in favorable conditions showed no significance when relating metabolic rate and lifespan. This is most likely because these cohorts had no survival need to undergo diapause which would have separated out the individuals with high and low metabolic rates. Those placed in simulated overwintering conditions would be affected by their metabolic rates -- individuals with high metabolic rates would be more likely to eclose earlier and die earlier. Individuals with low metabolic rates would spend more time in diapause and eclose later, extending their lifespan.  
+
+According to the evolution theory described in Olshansky & Rattan (2009), higher metabolic rates are liked to species with "high extrinsic mortality" (e.g. targeted prey) since they must quickly develop and reproduce in order to pass down their genes. Lower metabolic rates were linked to individuals with lower extrinsic mortalities and could take their time to gradually develop into larger sizes and live longer. For this theory to hold true, lifespan would need to be considered as a function of metabolic rate.
+
+However, the evolution theory does not consider seasonal timing in this case. It may be possible that both early and late eclosers miss the optimal season for mating by eclosing before or after resource availability. Therefore, individuals who have metabolic rates that are too high or too low would not be able to pass down their genes. However, if we assume these individuals are still able to live, but not reproduce, their lifespans would not be an ideal indicator for fitness.
 
 # Session Info
 ```{r}
