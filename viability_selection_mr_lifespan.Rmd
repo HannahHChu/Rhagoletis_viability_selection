@@ -78,13 +78,13 @@ data2$total_time_day10 <- (24 - data2$day10purge.trans) + data2$day10resp
 ## Metabolic Rate Calculation
 ```{r}
 #getting denominator for mass-specific mr
-data2$total_time_day10 * data$mass_day10
+denom2 <- data2$total_time_day10 * data$mass_day10
 
 #Metabolic Rate for day 11
 data2$MR11<- data$resp_day11/(data2$total_time_day10)
 
 #Mass specific Metabolic Rate for day 11
-data2$msMR11<- data$resp_day11/(data2$total_time_day10 * data$mass_day10)
+data2$msMR11<- data$resp_day11/(denom2)
 ```
 
 ## Controlling for blank controls
@@ -97,11 +97,11 @@ data3 <- data2%>%
 
 #check columns
 #glimpse(data3)
-data3$mean.blank
+#data3$mean.blank
 
 #merge data3 and data2 by cohort day and tape and create a mean blanks column
 data4 <- inner_join(data2, data3, by=c("cohort_day", "tape"))
-data4$mean.blank
+#data4$mean.blank
 
 #do some corrections
 data5 <- data4%>%
@@ -293,13 +293,13 @@ data2.15$total_time_day15 <- (24 - data2.15$day15purge.trans) + data2.15$day15re
 ## Metabolic Rate Calculation
 ```{r}
 #getting denominator for mass-specific mr
-data2.15$total_time_day15 * data$mass_day14
+denom<-data2.15$total_time_day15 * data$mass_day14
 
 #Metabolic Rate
 data2.15$MR15<- data$resp_day15/(data2.15$total_time_day15)
 
 #Mass specfic metabolic rate
-data2.15$msMR15<- data$resp_day15/(data2.15$total_time_day15 * data$mass_day14)
+data2.15$msMR15<- data$resp_day15/(denom)
 ```
 
 ## Controlling for Blanks
@@ -311,11 +311,11 @@ data3.15 <- data2.15%>%
 
 #check columns
 #glimpse(data3.15)
-data3.15$mean.blank2
+#data3.15$mean.blank2
 
 #merge data3 and data2 by cohort day and tape
 data4.15 <- inner_join(data2.15, data3.15, by=c("cohort_day", "tape"))
-data4.15$mean.blank2
+#data4.15$mean.blank2
 
 #do some corrections
 data5.15 <- data4.15%>%
@@ -451,7 +451,7 @@ data5.ls <- data5.15.treatsub%>%
 mergedat1 <- inner_join(pupdeaths, data5.na, by = c("Host", "cohort_day", "well_id", "uniqueID"))
 
 #column bind the merged data with the lifespan data to check same column dim
-cbind(names(data5.ls), names(mergedat1)[-56])
+#cbind(names(data5.ls), names(mergedat1)[-56])
 
 #once the column dimensions are the same, merge the two sets of data
 mergedata<- merge(data5.ls, mergedat1)
