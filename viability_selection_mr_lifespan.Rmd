@@ -29,6 +29,7 @@ Data are publicly available via [github](https://raw.githubusercontent.com/adngu
 ```{r}
 data<- fread("https://raw.githubusercontent.com/adnguyen/Circadian_rhythm_runs_seasonal_timing/master/Data/2018-05-30_rhagoletis_masterdata_data_slice.csv")
 
+data$eclosion_date
 #look at summary of data
 #glimpse(data)
 ```
@@ -259,6 +260,11 @@ ggplot(data5.treatsub,aes(x=MR11.cor, y=lifespan, colour=Host))+geom_point()+sta
         axis.ticks.x=element_blank(),legend.position="bottom",
         axis.ticks.y=element_blank(),panel.background = element_blank(),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),axis.text=element_text(size=7),text=element_text(size=15))
+
+
+neg <-data5.treatsub%>%
+  filter(lifespan < 0)
+glimpse(neg)
 ```
 
 # Day 15 Cohort
@@ -278,6 +284,7 @@ data2.15 <- data%>%
   group_by(cohort_day, tape)%>%
   mutate(.,day15purge.trans=seq(from = min(day15purge, na.rm=TRUE), to = max(day15purge, na.rm=TRUE), length.out = length(Host)))
 #glimpse(data2.15)
+
 ```
 
 ## Calculating start and end time for total amount of hours of CO2 production
